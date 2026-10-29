@@ -1,0 +1,115 @@
+---
+alwaysApply: true
+---
+
+# Product: YouTube Video Creation & Upload Tool
+
+Professional desktop application (Tauri + Vue 3) for creating YouTube-ready videos from audio files and images, with integrated upload management, audio processing, and Discogs metadata integration.
+
+## Core Features
+
+### 🎬 Video Creation
+- **Bulk video creation** — Pair multiple audio tracks with images; batch-create 1920×1080 MP4s in parallel
+- **Flexible image sources** — Local files, folder images, image URLs, or Discogs release artwork
+- **Multiple image styles**:
+  - Automatic (centered crop with blurred background)
+  - Fit 16:9 (contain or cover modes)
+  - Custom background (main image + custom background)
+  - Background-only (no main image, just background)
+- **Predefined backgrounds** — Library of built-in background templates with favorites
+- **Smart image assignment** — Per-track assignment, "use previous track's image", or apply same image to all tracks
+- **Real-time preview** — Preview processed images before video creation
+- **Audio metadata extraction** — Automatically extracts artist, title, album, and album art from audio files
+- **Auto-assign album art** — Uses embedded album art when available
+- **Progress tracking** — Real-time progress per video with detailed status (image processing, encoding, completion)
+- **Parallel rendering** — Multiple videos created simultaneously (up to 4 concurrent)
+
+### 📤 YouTube Upload
+- **Bulk upload** — Upload multiple videos simultaneously with individual progress tracking
+- **Rich metadata** — Titles, descriptions, tags, categories, privacy settings, made-for-kids flag
+- **Privacy options** — Public, unlisted, private, or save as draft
+- **Scheduling** — Schedule private videos to go public at a specific date/time
+- **Playlist assignment** — Automatically add videos to YouTube playlists
+- **Video thumbnails** — Automatic thumbnail generation from video files
+- **OAuth authentication** — Secure YouTube API authentication with token management
+- **Resumable uploads** — Large file uploads with progress tracking and resumption
+- **Upload history** — Track all uploads with search, filtering, and pagination
+- **Processing status** — Check YouTube video processing status (uploaded, processing, processed, failed)
+- **Video links** — Direct links to uploaded videos and their processing status
+
+### 🎵 Audio Normalization
+- **Standalone normalization** — Normalize audio files independently of video creation
+- **During video creation** — Optional normalization step before video encoding
+- **EBU R128 loudnorm** — Professional loudness normalization (-16 LUFS integrated loudness)
+- **Peak adjustment** — True peak (-0.5 dBTP) and final peak (-0.1 dB) adjustment
+- **High-pass filtering** — Optional 30Hz high-pass filter to remove low-frequency noise
+- **Parallel processing** — Process multiple files simultaneously using all CPU cores
+- **USB-compatible output** — Optimized for USB playback (WAV 44.1kHz/16-bit stereo)
+- **Output options** — Overwrite originals or add suffix to filenames
+
+### 🎨 Discogs Integration
+- **OAuth authentication** — Secure Discogs API authentication
+- **Release search** — Search Discogs releases with autocomplete (debounced)
+- **Release linking** — Link releases to videos for metadata auto-fill
+- **Bulk linking** — Link one release to multiple videos at once
+- **Metadata auto-fill** — Auto-populate title, description, and tags from Discogs releases
+- **Description templates** — Customizable description template builder with Discogs tags (artist, release, year, label, catalog number, genres, styles, URL)
+- **Image selection** — Use Discogs release artwork as video images during creation
+- **Release information** — Display full release details (artists, labels, year, genres, styles, tracklist)
+
+### ⚙️ Settings & Preferences
+- **Default image style** — Set default image processing style for new tracks
+- **Default fit mode** — Set default fit mode (contain/cover) for fit-16x9 style
+- **Default background** — Set favorite predefined background
+- **Default privacy** — Set default YouTube privacy status (public/private/unlisted/draft)
+- **Default category** — Set default YouTube category
+- **Default playlist** — Set default YouTube playlist for uploads
+- **Default normalization** — Enable normalization by default during video creation
+- **Default high-pass** — Enable high-pass filter by default when normalizing
+- **Output paths** — Remember last used output folders and set preferred output path
+- **Description templates** — Build reusable description templates with tags and custom text
+- **Notifications** — Desktop notifications on upload completion (with permission management)
+- **Account management** — Connect/disconnect YouTube and Discogs accounts
+- **Data management** — Clear all app data (preferences, history, tokens)
+
+### 📊 Upload History
+- **Complete tracking** — All uploads saved with metadata (title, YouTube URL, Discogs link)
+- **Search & filter** — Search by title or Discogs release title
+- **Pagination** — Browse large upload histories efficiently
+- **Processing status** — Real-time status checking (uploaded, processing, processed, failed, deleted)
+- **Status sync** — Manual and automatic status refresh
+- **Direct links** — Open YouTube videos and Discogs releases directly
+
+## Stack
+
+- **Frontend**: Vue 3 (Composition API), ShadCn-style UI components, Tailwind CSS
+- **Backend**: Rust with clean architecture (domain/use-cases/infrastructure pattern)
+- **Video/Audio Processing**: FFmpeg (command-line, bundled or system)
+- **Image Processing**: Rust `image` crate (centered crop, blur, brightness/contrast adjustments)
+- **Platform**: Tauri (cross-platform desktop: macOS, Linux, Windows)
+- **Storage**: Tauri Store plugin for persistent preferences and upload history
+- **OAuth**: Local callback server for YouTube and Discogs authentication
+
+## User Flow
+
+### Video Creation Flow
+1. **Source selection** — Pick audio files (individual files or folder) with automatic metadata extraction
+2. **Image assignment** — For each track, assign image (file/folder/URL/Discogs) and choose style
+3. **Preview** — See real-time preview of processed images
+4. **Audio options** — Enable normalization and high-pass filter if needed
+5. **Output** — Choose output folder (remembers last used)
+6. **Create** — Batch create videos with parallel processing and per-video progress
+
+### YouTube Upload Flow
+1. **Authentication** — Connect YouTube account (OAuth flow)
+2. **Source selection** — Pick video files (individual files or folder)
+3. **Metadata editing** — Set title, description, tags, category, privacy for each video
+4. **Discogs linking** (optional) — Search and link Discogs releases for auto-fill
+5. **Template application** — Apply description templates with Discogs data
+6. **Upload** — Bulk upload with progress tracking and automatic history saving
+
+### Audio Normalization Flow
+1. **Source selection** — Pick audio files (individual files or folder)
+2. **Output selection** — Choose output folder
+3. **Options** — Enable high-pass filter, choose overwrite or suffix
+4. **Normalize** — Process files in parallel with progress tracking

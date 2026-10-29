@@ -1,0 +1,56 @@
+---
+alwaysApply: true
+description: "Verification rules for code quality and type safety"
+---
+
+# Code Verification Protocol
+
+After completing any code changes, you MUST verify the following to ensure code quality and prevent regressions:
+
+## Required Checks
+
+### 1. TypeScript Type Checking
+```bash
+yarn check:types
+```
+- Runs `vue-tsc --noEmit` to validate all TypeScript and Vue component types
+- Ensures no type errors in frontend code
+- Must pass with zero errors before thinking work is done
+
+### 2. Rust Code Validation  
+```bash
+yarn check:rust
+```
+- Runs `cargo check` in the `src-tauri` directory
+- Validates Rust backend code compilation
+- Checks for syntax errors, type mismatches, and missing dependencies
+- Must pass with zero errors and zero warnings before thinking work is done
+
+### 3. Combined Verification (Recommended)
+```bash
+yarn verify
+```
+- Runs both TypeScript and Rust checks sequentially
+- Fastest way to validate entire codebase
+- Use this for comprehensive verification
+
+## When to Run Checks
+
+- **Always**: After making any code changes
+- **After**: Updating dependencies or configuration
+
+## Failure Resolution
+
+If checks fail:
+1. **Read the error messages carefully** - they usually indicate the exact issue
+2. **Fix TypeScript errors** in Vue components, composables, or type definitions
+3. **Fix Rust errors** in the backend code (domain, use cases, infrastructure, commands)
+4. **Re-run the checks** until they pass
+5. **Never ignore or skip** failing checks
+
+## Integration with Workflows
+
+These checks are integrated into:
+- Build process (`yarn build` runs `vue-tsc --noEmit` automatically)
+- Development workflow (run manually during development)
+- CI/CD pipeline (should be added to prevent broken deployments)

@@ -1,0 +1,255 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub Release'
+        required: true
+        default: true
+        type: boolean
+      upload_artifacts:
+        description: 'Upload build artifacts'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build Tauri app (Windows)
+        run: yarn tauri build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          DISCOGS_CONSUMER_KEY: ${{ secrets.DISCOGS_CONSUMER_KEY }}
+          DISCOGS_CONSUMER_SECRET: ${{ secrets.DISCOGS_CONSUMER_SECRET }}
+
+      - name: Upload Windows artifacts
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          retention-days: 7
+
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build Tauri app (macOS Universal)
+        run: yarn tauri build --target universal-apple-darwin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          DISCOGS_CONSUMER_KEY: ${{ secrets.DISCOGS_CONSUMER_KEY }}
+          DISCOGS_CONSUMER_SECRET: ${{ secrets.DISCOGS_CONSUMER_SECRET }}
+
+      - name: Upload macOS artifacts
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          retention-days: 7
+
+  create-deployment-package:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    if: ${{ inputs.upload_artifacts }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: windows-artifacts/
+
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: macos-artifacts/
+
+      - name: Extract version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Found version: $VERSION"
+
+      - name: Create deployment packages
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Create Windows package
+          WIN_DIR="Yupload_${VERSION}_Windows"
+          mkdir -p "$WIN_DIR"
+          
+          # Copy common files to Windows package root
+          if [ -d "deploy/assets" ]; then
+            cp -r deploy/assets/* "$WIN_DIR/" 2>/dev/null || true
+          fi
+          
+          # Copy CHANGELOG.md to Windows package
+          if [ -f "CHANGELOG.md" ]; then
+            cp "CHANGELOG.md" "$WIN_DIR/"
+          fi
+          
+          # Copy Windows builds to root (no subfolder)
+          find windows-artifacts -name "*.exe" -exec cp {} "$WIN_DIR/" \;
+          find windows-artifacts -name "*.msi" -exec cp {} "$WIN_DIR/" \;
+          
+          # Create Windows ZIP
+          zip -r "${WIN_DIR}.zip" "$WIN_DIR"
+          
+          # Create macOS package
+          MAC_DIR="Yupload_${VERSION}_macOS"
+          mkdir -p "$MAC_DIR"
+          
+          # Copy common files to macOS package root
+          if [ -d "deploy/assets" ]; then
+            cp -r deploy/assets/* "$MAC_DIR/" 2>/dev/null || true
+          fi
+          
+          # Copy CHANGELOG.md to macOS package
+          if [ -f "CHANGELOG.md" ]; then
+            cp "CHANGELOG.md" "$MAC_DIR/"
+          fi
+          
+          # Copy macOS builds to root (no subfolder)
+          find macos-artifacts -name "*.dmg" -exec cp {} "$MAC_DIR/" \;
+          
+          # Create macOS ZIP
+          zip -r "${MAC_DIR}.zip" "$MAC_DIR"
+          
+          # Show packages
+          echo "=== Windows Package Contents ==="
+          find "$WIN_DIR" -type f
+          echo ""
+          echo "=== macOS Package Contents ==="
+          find "$MAC_DIR" -type f
+          echo ""
+          echo "=== Archives Created ==="
+          ls -lh *.zip
+
+      - name: Upload deployment packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-packages
+          path: Yupload_*.zip
+          retention-days: 30
+
+  create-release:
+    needs: [create-deployment-package]
+    runs-on: ubuntu-latest
+    if: ${{ inputs.create_release }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download deployment packages
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-packages
+          path: ./
+
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: windows-artifacts/
+
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: macos-artifacts/
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Extract changelog section for this version
+          if [ -f "CHANGELOG.md" ]; then
+            # Get content between version headers
+            sed -n "/## \[$VERSION\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+            
+            # If empty, use a default message
+            if [ ! -s release_notes.md ]; then
+              echo "Release $VERSION" > release_notes.md
+              echo "" >> release_notes.md
+              echo "See CHANGELOG.md for details." >> release_notes.md
+            fi
+          else
+            echo "Release $VERSION" > release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Yupload v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            Yupload_*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

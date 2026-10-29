@@ -1,0 +1,55 @@
+---
+alwaysApply: true
+description: "Frontend architecture: composables + components (LLM reference)"
+---
+
+# Frontend architecture (composables + components)
+
+## Roles
+
+- **Composables** (`src/composables/`): Hold domain state, side effects (Tauri `invoke` / `listen`), watchers, and actions. Return a single object (refs, computed, functions). No template. Use for flows that span many UI pieces (e.g. creation flow).
+- **Pages / views**: Screen-sized components that call one main composable, own the layout (PageContainer, PageHeader, sections), and wire slots/children. Keep template logic to “bind this to that”; no domain logic.
+- **Components**: Reusable UI (layout, business, or dumb). Receive data and events via props/emits. Prefer many props + clear events over provide/inject when the child must stay typable and ref-free.
+
+## Data flow
+
+- Pages destructure the composable (`const { foo, bar, doThing } = useX()`) and pass values/actions down as props or template bindings. Refs unwrap in the template; children see plain values.
+- For two-way bindings from a child, the parent either passes a ref and the child uses `v-model` (when the child is in the same tree as the composable consumer), or the parent passes value + callback and the child emits updates. Avoid passing raw refs into deeply nested components so you don’t have to unwrap in the child.
+- Shared types live in `src/types.ts`. Put types used by composables and by multiple components there; keep component-local types in the component.
+
+## Structure
+
+- **Views** (`src/views/`): Top-level screen components (MainMenu, VideoUpload, UnifiedUploadPage, Settings, AudioNormalize, UploadHistory, FAQ, PrivacyPolicy, SuccessPage). Each view uses one main composable and wires layout + subcomponents. No domain state or Tauri calls in the view beyond calling the composable.
+- **Components** (`src/components/`): Reusable UI and flow-specific subcomponents. No top-level screens here.
+  - **`layout/`**: Screen structure only (PageContainer, PageHeader, TwoPanelLayout). Used by views to wrap content. No business logic.
+  - **`ui/`**: Primitives (Button, Card, Modal, Input, Toggle, SectionHeader, SectionCard, etc.). Presentational only; props/emits. Shared across all flows.
+  - **Root components**: Reusable blocks and domain panels (SourceStepWithFileCard, FileSelectionCard, EmptyState, SelectableListItem, ImageAssignmentPanel, VideoMetadataEditor, PipelineProgress, etc.). Used by one or more views; receive data/events via props/emits.
+  - **`unified-upload/`**: Flow-specific step components for the unified flow only (UnifiedUploadOptionsStep, UnifiedUploadProcessingStep). Each step composes shared components (e.g. PipelineProgress); the unified view switches between steps via `currentStep`.
+- One composable per major flow or feature (e.g. `useUnifiedUploadFlow`, `useVideoUploadFlow`, `useSettings`). If a flow grows huge, split by domain (e.g. `useUnifiedPipeline`) starting from the existing composable; don’t add many tiny composables up front.
+- Pages/views delegate large blocks to subcomponents (e.g. `ImageAssignmentPanel`, `UnifiedUploadOptionsStep`) via props + events. Those subcomponents stay presentational: they don’t call composables; the view owns the composable and passes down what’s needed.
+- App stays thin: view state + which view to show. No domain state or Tauri calls in the root.
+
+## Step-based flows and step navigation
+
+All multi-step flows use the same mental model so behaviour and UI stay consistent.
+
+- **Step 1 = source**: Use the global **SourceStepWithFileCard** (SourceStepView + FileSelectionCard + “no files” modal). Same component in VideoUpload (variant `video`), AudioNormalize (variant `audio`), and UnifiedUploadPage (variant `audio`). Avoid duplicating source-step UI; one shared component, one place to fix.
+- **Step 2+**: Flow-specific content (metadata/upload, options, processing). VideoUpload and AudioNormalize have a single “step 2”; UnifiedUploadPage has multiple steps (images, metadata, options, processing) and uses flow-specific step components in `unified-upload/`.
+- **Step navigation bar**: Show a step breadcrumb (e.g. “1. Source” | “2. Metadata”) on **every** multi-step view once the user has left step 1. Same pattern everywhere:
+  - **VideoUpload**: “1. Source” (clickable → clearSource) | “2. Metadata”. Hidden while uploading.
+  - **AudioNormalize**: “1. Source” (clickable → clearSource) | “2. Normalize”. Hidden while processing.
+  - **UnifiedUploadPage**: “1. Source” | “2. Images” | “3. Metadata” | “4. Options” (clickable when allowed). Hidden on processing step.
+- **Why**: Users always see where they are and can go back to source (or earlier steps in unified) without hunting for a “Change source” link. Same UX across YouTube upload, normalize, and unified create+upload.
+
+## Consistency
+
+- Align section structure with the design system: SectionHeader + SectionCard where you have a label, description, and body. Use this in both top-level pages and extracted panels.
+- Name composables `use*`; name pages and panels by role (e.g. `VideoCreationPage`, `ImageAssignmentPanel`).
+
+## Component choices (rationale)
+
+- **Views own composables**: The view is the only place that calls the flow composable and passes data/actions down. Subcomponents receive props/emits only. This keeps composables testable, components reusable, and data flow easy to follow (no provide/inject for domain state).
+- **Global step components**: SourceStepWithFileCard is shared so VideoUpload, AudioNormalize, and UnifiedUploadPage don’t duplicate the same “source + file card + no-files modal” UI. One component, one place to change copy or behaviour.
+- **Step navigation on every multi-step view**: VideoUpload and AudioNormalize show “1. Source | 2. …” like UnifiedUploadPage so users always see where they are and can return to source. Same pattern everywhere instead of only a “Change source” button buried in the layout.
+- **`layout/` vs `ui/`**: Layout is screen structure (PageContainer, PageHeader, TwoPanelLayout); ui is primitives (Button, Card, Input, etc.). Layout wraps content; ui is used inside it. Keeps responsibilities clear.
+- **`unified-upload/` for flow-specific steps**: Options and processing steps exist only in the unified flow. They live in a dedicated folder and compose shared components (PipelineProgress, SectionCard, etc.) so the unified view stays readable and steps stay reusable within that flow.

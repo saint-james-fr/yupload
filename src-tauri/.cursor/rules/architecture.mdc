@@ -1,0 +1,35 @@
+---
+alwaysApply: true
+---
+
+# Backend Architecture (Rust / Tauri)
+
+## Layering (inside-out)
+
+- **domain** — Types, DTOs, and **traits** (ports). No I/O, no infra. Pure business vocabulary.
+- **use_cases** — Orchestration only. Depends on domain traits; receives implementations via constructor. No direct infra imports except for wiring in commands.
+- **infrastructure** — Concrete adapters: implement domain traits (e.g. `ImageProcessor`, `VideoCreator`, `FileHandler`). FFmpeg, HTTP, file system, etc. live here.
+- **commands** — Tauri entry points. Thin: validate input (e.g. paths), instantiate use case with infra implementations, call use case, map errors to strings for the frontend.
+- **utils** — Shared helpers: logging, file ops, ffmpeg wrappers, constants, validation. No business rules.
+- **state** — App-wide state (e.g. OAuth clients) passed via Tauri `manage()`.
+- **config** — App configuration.
+
+## Guidelines
+
+1. **Ports = traits in domain.** New behavior that touches I/O gets a trait in `domain/traits.rs` and an impl in `infrastructure/`. Use cases depend only on the trait.
+2. **Commands stay thin.** No business logic in commands. Delegate to use cases or, for simple operations, to infra that implements a domain trait.
+3. **Use cases orchestrate, they don’t implement.** Use cases call trait methods and coordinate steps (timeouts, progress, concurrency). They are built with `Box<dyn Trait>` (or similar) in the constructor.
+4. **Domain stays pure.** Domain modules must not depend on `infrastructure`, `commands`, or `tauri`. Only std, serde, anyhow, and the like.
+5. **Naming:** `*Impl` for infrastructure types that implement a domain trait (e.g. `ImageProcessorImpl`). Use cases are named `*UseCase` and expose an `execute` (or similar) method.
+6. **Errors:** Use `anyhow::Result` inside the backend. Commands map to `Result<T, String>` for the frontend.
+7. **Blocking work:** Run FFmpeg and other blocking code in `tokio::task::spawn_blocking`; use `tokio::time::timeout` where appropriate. Use cases or commands own this concern.
+8. **Temp files and cleanup:** Prefer `utils` helpers and the app’s existing temp-file cleanup; don’t scatter ad-hoc temp logic.
+
+## Where to put what
+
+- New **business step** that touches external world → new trait in domain, impl in infrastructure, used by a use case.
+- New **orchestrated flow** (multi-step, progress, concurrency) → new or extended use case; commands call it.
+- New **frontend-triggered action** → new command that calls a use case or an infra type that implements a domain trait.
+- **Validation, paths, logging, constants** → `utils` or small helpers used from commands/use cases.
+
+Keeping this layering and these guidelines keeps the backend testable and consistent.

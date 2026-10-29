@@ -1,0 +1,131 @@
+name: Create Release Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run ID from previous build workflow (find in URL of the failed run)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  create-release-from-artifacts:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download Windows build from previous run
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: windows-artifacts/
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download macOS build from previous run
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: macos-artifacts/
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create deployment packages
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Create Windows package
+          WIN_DIR="Yupload_${VERSION}_Windows"
+          mkdir -p "$WIN_DIR"
+          
+          # Copy common files to Windows package root
+          if [ -d "deploy/assets" ]; then
+            cp -r deploy/assets/* "$WIN_DIR/" 2>/dev/null || true
+          fi
+          
+          # Copy CHANGELOG.md to Windows package
+          if [ -f "CHANGELOG.md" ]; then
+            cp "CHANGELOG.md" "$WIN_DIR/"
+          fi
+          
+          # Copy Windows builds to root (no subfolder)
+          find windows-artifacts -name "*.exe" -exec cp {} "$WIN_DIR/" \;
+          find windows-artifacts -name "*.msi" -exec cp {} "$WIN_DIR/" \;
+          
+          # Create Windows ZIP
+          zip -r "${WIN_DIR}.zip" "$WIN_DIR"
+          
+          # Create macOS package
+          MAC_DIR="Yupload_${VERSION}_macOS"
+          mkdir -p "$MAC_DIR"
+          
+          # Copy common files to macOS package root
+          if [ -d "deploy/assets" ]; then
+            cp -r deploy/assets/* "$MAC_DIR/" 2>/dev/null || true
+          fi
+          
+          # Copy CHANGELOG.md to macOS package
+          if [ -f "CHANGELOG.md" ]; then
+            cp "CHANGELOG.md" "$MAC_DIR/"
+          fi
+          
+          # Copy macOS builds to root (no subfolder)
+          find macos-artifacts -name "*.dmg" -exec cp {} "$MAC_DIR/" \;
+          
+          # Create macOS ZIP
+          zip -r "${MAC_DIR}.zip" "$MAC_DIR"
+          
+          # Show packages
+          echo "=== Windows Package Contents ==="
+          find "$WIN_DIR" -type f
+          echo ""
+          echo "=== macOS Package Contents ==="
+          find "$MAC_DIR" -type f
+          echo ""
+          echo "=== Archives Created ==="
+          ls -lh *.zip
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Extract changelog section for this version
+          if [ -f "CHANGELOG.md" ]; then
+            # Get content between version headers
+            sed -n "/## \[$VERSION\]/,/## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+            
+            # If empty, use a default message
+            if [ ! -s release_notes.md ]; then
+              echo "Release $VERSION" > release_notes.md
+              echo "" >> release_notes.md
+              echo "See CHANGELOG.md for details." >> release_notes.md
+            fi
+          else
+            echo "Release $VERSION" > release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Yupload v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          files: |
+            Yupload_*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

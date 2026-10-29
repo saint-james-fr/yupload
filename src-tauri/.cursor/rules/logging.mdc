@@ -1,0 +1,212 @@
+---
+alwaysApply: true
+Title: "Logging Rules"
+---
+
+# Rust Backend Logging Standards
+
+## Framework & Configuration
+
+### Primary Framework
+- **Use `tracing`** with `tracing-subscriber` and `tracing-appender` as the primary logging framework
+- **Fallback to `env_logger`** only if tracing initialization fails
+- **Avoid legacy `log` crate macros** - use `tracing::*` macros directly
+
+### Initialization Pattern
+```rust
+// Initialize logging after app data directory is available
+// Location: infrastructure/logging.rs
+// Called from: lib.rs setup function
+```
+
+### File Configuration
+- **Log directory**: `{app_data_dir}/logs/`
+- **File naming**: `yupload.{YYYY-MM-DD}.log`
+- **Rotation**: Daily with max 5 backup files
+- **Format**: No ANSI, includes target, thread IDs, file, line number
+- **Writer**: Non-blocking for performance
+
+### Console Configuration
+- **ANSI colors**: Enabled for better readability
+- **Target/module path**: Hidden for cleaner output
+- **Writer**: Non-blocking for performance
+
+### Log Level Management
+- **Default level**: `debug` (when `RUST_LOG` not set)
+- **Environment override**: Configurable via `RUST_LOG` environment variable
+- **Filter**: Use `EnvFilter::try_from_default_env()`
+
+## Log Level Usage Guidelines
+
+### `tracing::info!` - High-Level Operations
+- Application lifecycle events (startup, shutdown)
+- Command entry points with key parameters
+- Successful operation completions with identifiers
+- System information logging
+- Bulk operation progress updates
+
+**Examples:**
+```rust
+tracing::info!("YouTube upload command received: '{}'", request.title);
+tracing::info!("Video uploaded successfully: {}", video_id);
+tracing::info!("Starting bulk video creation: {} videos", count);
+```
+
+### `tracing::debug!` - Detailed Diagnostics
+- FFmpeg path resolution steps
+- Image processing timing with emojis (⏱️, ✅)
+- OAuth flow details
+- Codec availability checks
+- File operations and validation
+
+**Examples:**
+```rust
+tracing::debug!("⏱️  Processing: {:?}", process_start.elapsed());
+tracing::debug!("✅ TOTAL: {:?}", total_start.elapsed());
+```
+
+### `tracing::warn!` - Non-Fatal Issues
+- Missing dependencies (FFmpeg codecs)
+- OS version detection failures
+- File validation warnings
+- Platform-specific limitations
+
+### `tracing::error!` - Error Conditions
+- Authentication failures with context
+- Upload failures with HTTP status codes
+- FFmpeg unavailability
+- Application panics
+
+## Error Logging Patterns
+
+### Error Context Pattern
+```rust
+// Always include relevant context
+tracing::error!("YouTube authentication failed: {}", e);
+tracing::error!("Failed to initialize YouTube upload: HTTP {} - {}", status, error_text);
+```
+
+### Error Chaining with `anyhow`
+```rust
+// Use .context() for error context
+.context("Failed to initialize upload")?
+
+// Use .with_context() for dynamic context
+.with_context(|| format!("Failed to save processed image: {}", output_path))?
+```
+
+### HTTP Error Logging
+```rust
+// Always include HTTP status codes and response bodies
+tracing::error!("Video upload failed: HTTP {} - {}", upload_status, error_text);
+```
+
+## Command Entry Point Pattern
+
+### Standard Command Logging
+```rust
+// Log command received with key parameters
+tracing::info!("YouTube upload command received: '{}'", request.title);
+
+// Log successful completion with identifiers
+tracing::info!("YouTube video uploaded successfully: {}", video_id);
+
+// Log cancellation with context
+tracing::info!("Cancellation detected, stopping YouTube upload at video {}/{}", index, total);
+```
+
+## Sensitive Data Handling
+
+### Use Redaction Function
+```rust
+// Always redact sensitive data using redact_sensitive()
+tracing::info!("Request path: {}", redact_sensitive(&request.output_path));
+```
+
+### Redaction Patterns
+- **OAuth tokens**: access_token, refresh_token, client_secret, client_id
+- **Bearer tokens**: Authorization headers
+- **Format**: Shows first 4 and last 4 chars: `abcd***wxyz`
+- **Short tokens**: `***REDACTED***`
+
+## Performance Logging
+
+### Timing Information
+```rust
+// Use emojis for visual clarity
+tracing::debug!("⏱️  Processing: {:?}", process_start.elapsed());
+tracing::debug!("✅ TOTAL: {:?}", total_start.elapsed());
+```
+
+### Performance Benchmarks
+- Log timing for image processing operations
+- Log timing for video encoding operations
+- Log timing for upload operations
+
+## System Information Logging
+
+### Startup Information
+Log on application startup:
+- OS, architecture, family
+- OS version (platform-specific)
+- CPU cores and memory (platform-specific)
+- FFmpeg availability and version
+- FFmpeg codec availability
+- Platform-specific dependencies (WebView2 on Windows)
+
+## Panic Handling
+
+### Panic Hook Pattern
+```rust
+// Log panics with location information
+tracing::error!("Panic occurred at {}:{}:{}", file, line, column);
+// Fallback to eprintln! if tracing unavailable
+```
+
+## File Management Commands
+
+### Log File Operations
+- Implement `get_log_files` for listing with metadata
+- Implement `export_logs` for log export functionality
+- Implement `get_current_log_content` for current log reading
+- Sort log files by modification time (newest first)
+
+## Consistency Rules
+
+### Message Formatting
+- Use descriptive, actionable error messages
+- Include relevant context (paths, IDs, status codes)
+- Use consistent terminology across the application
+- Prefer structured information over free-form text
+
+### Emoji Usage
+- `⏱️` for timing information
+- `✅` for completion/success timing
+- Use sparingly and consistently
+
+### Context Information
+- Always include operation identifiers when available
+- Include file paths for file operations
+- Include HTTP status codes for API operations
+- Include user-facing identifiers (video titles, etc.)
+
+## Future Enhancements
+
+### Structured Logging (Recommended)
+```rust
+// Consider migrating to structured fields
+tracing::info!(video_id = %id, title = %title, "Video uploaded");
+```
+
+### Spans for Operation Tracking
+```rust
+// Consider using spans for operation boundaries
+#[instrument]
+fn upload_video(request: &UploadRequest) -> Result<String> {
+    // Implementation
+}
+```
+
+### Distributed Tracing
+- Consider adding correlation IDs for request tracking
+- Consider adding operation spans for better observability

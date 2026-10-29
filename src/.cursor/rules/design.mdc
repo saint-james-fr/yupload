@@ -1,0 +1,149 @@
+---
+alwaysApply: true
+description: "Design system (LLM reference)"
+---
+
+# Design system (LLM reference)
+
+## Philosophy
+- Hierarchy first: section label → description → body; one clear primary action per screen/block.
+- Scannable: uppercase section labels, short descriptions, icons next to labels/actions so meaning is clear at a glance.
+- Consistency: same section/card/button patterns everywhere; reuse SectionHeader, SectionCard, StatusBadge; no one-off layouts.
+- Semantic over literal: use design tokens (primary, muted, destructive); theme handles light/dark.
+- Restraint: one primary CTA per block; secondary actions outline/ghost; no decorative borders or accents except selectable state and conditional sub-blocks.
+- Clarity: helper text under inputs when behavior or outcome isn’t obvious; PageHeader description one short sentence.
+
+## Inspirations
+
+Visual language is inspired by strong SaaS and pro tools: Linear, Vercel, Notion, Figma. Layouts are dense but readable, sections are clear, and each area has one main primary action with secondary actions toned down (outline/ghost). Settings and account areas use a “card per concern” model (Stripe, Railway); status badges and short descriptions keep things easy to parse. The tone is dashboard-like and trustworthy, not playful or consumer-app style.
+
+
+## Tokens / semantic color
+- Use Tailwind semantic names; avoid raw hex/hsl in components.
+- `background`, `foreground`, `card`, `primary`, `primary-foreground`, `muted`, `muted-foreground`, `border`, `input`, `destructive`, `ring`.
+- Status success: `border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400` or `text-green-600 dark:text-green-500` with `bg-green-50 dark:bg-green-950/30`.
+- Status processing/pending: `text-yellow-600 dark:text-yellow-500` with `bg-yellow-50 dark:bg-yellow-950/30` or `text-primary` for active states.
+- Status failed/error: `text-red-600 dark:text-red-500` with `bg-red-50 dark:bg-red-950/30` or `text-destructive`.
+- Status neutral/muted: `border-muted-foreground/30 bg-muted/30 text-muted-foreground` or `text-gray-600 dark:text-gray-400` with `bg-gray-50 dark:bg-gray-950/30` for deleted states.
+
+## Section structure
+- Pattern: section wrapper → section header → section body (card or custom).
+- Section wrapper: `<section class="space-y-2">` or `class="space-y-2 mt-8"` when following another section.
+- Section header: use `<SectionHeader label="…" description="…" />` (from `./components/ui/SectionHeader.vue`).
+- Section label: `text-xs font-medium uppercase tracking-wider text-muted-foreground`.
+- Section description: `text-xs text-muted-foreground mt-0.5` (optional, below label).
+
+### Section description vs body — no repetition
+- **Section description** = purpose or outcome only (what this section is for). One short phrase or sentence.
+- **Field labels and helper text** = mechanics for that control only (what it does, where it writes, how to override). Do not restate the section’s purpose.
+- **Rule:** Do not say the same thing in both. If the section says “choose where to save”, the body must not repeat “choose output folder” or “videos written here” in a way that duplicates that idea. Prefer: section = *why* / *outcome*; body = *what this control is* and *behavior* (e.g. “Videos will be written here. Uses preferred path from Settings if set.” is body-only; section stays “Run the export once the output folder is set.” or similar).
+
+## Section body / cards
+- Use `<SectionCard>` for section content. Props: `padding?: "default" | "compact" | "none"`, `class?: string`.
+- Base card styles: `rounded-lg border-2 border-border bg-card shadow-sm`.
+- Padding: default `p-6`, compact `p-4`, none `""`.
+- Do not use `border-l-2 border-primary/50` or left-accent strips for options/blocks unless it is a conditional sub-block (e.g. “only when X is selected”); prefer plain SectionCard for option groups.
+
+## Selectable cards (radio-like)
+- **Use `<SelectableRadioCard>`** from `./components/ui/SelectableRadioCard.vue` for radio-style selectable cards. Props: `value: string | number`, `modelValue: string | number | null`, `icon?: Component`, `title: string`, `description?`, `disabled?`, `class?`. Selected: `border-primary bg-primary/5 shadow-sm`. Unselected: `border-border hover:border-muted-foreground/40 hover:bg-muted/30`. Uses native `<input type="radio" class="sr-only">` with label wrapper. Icon shown in rounded container (`bg-muted`). Supports custom content slot. Emits `update:modelValue`.
+- For manual implementation: Selected: `border-primary bg-primary/5 shadow-sm`. Unselected default: `border-border`. Unselected hover: `hover:border-muted-foreground/40 hover:bg-muted/30`. Use native `<input type="radio" class="sr-only">` and make the card the click target; card gets the above classes based on checked state.
+
+## Path / folder selection zone
+- **One clickable zone:** The selection zone (dashed when empty, solid when a path is set) is the click target for choosing a folder. No separate “Select folder” or “Change folder” button.
+- **Clear = icon on the right:** When a path is set, show a clear affordance as a simple icon (e.g. XCircle) at the right of the selection zone. Use a small icon-only button with `aria-label="Clear …"` and `@click.stop` so it does not trigger the zone’s folder-open action.
+- Style the zone like a card: empty state = `border-dashed border-muted-foreground/30 bg-muted/10` with hover; filled = `border-border bg-muted/20` with hover. Keep the zone keyboard-accessible (`role="button"`, `tabindex="0"`, Enter/Space).
+
+## Conditional sub-blocks (e.g. “when Fit 16:9”)
+- Container: `border-l-2 border-primary/50 rounded-r-md bg-muted/20` plus padding (e.g. `pl-4 pr-4 py-3` or `-mx-1 px-4 py-3`).
+- Use only for content that appears conditionally under a parent choice; not for standalone sections.
+
+## Buttons
+- Primary CTA: `variant="default"` (gradient primary, hover shadow).
+- Secondary / actions: `variant="outline"` — neutral border, light hover only: `border-2 border-input bg-background text-foreground hover:bg-muted/50 hover:border-muted-foreground/40`. No full primary fill on hover.
+- Destructive: `variant="destructive"` or `class="text-muted-foreground hover:text-destructive hover:border-destructive"` for disconnect/clear.
+- Ghost: `variant="ghost"` for icon-only or low emphasis.
+- Override outline for brand (e.g. YouTube): `class="border-red-500/50 text-red-600 hover:bg-red-500/10 hover:border-red-500/70 dark:text-red-400"`.
+
+## Status badge
+- Use `<StatusBadge :connected="boolean" connectedLabel="…" disconnectedLabel="…" />` for Connected/Not connected–style states.
+- Uses Lock/Unlock icons and token-based green vs muted styling (see Tokens).
+
+## Typography
+- Section label: as in Section structure.
+- Section description: as in Section structure.
+- Helper text under inputs/choices: `text-xs text-muted-foreground`.
+- Card/block title: `text-sm font-medium text-foreground` or `text-sm font-semibold text-foreground`.
+- Body: `text-sm text-foreground` or `text-sm text-muted-foreground` as needed.
+
+## Spacing
+- Between sections: `mt-8` on the section or `space-y-6` / `space-y-8` on parent.
+- Inside section: `space-y-2` (header to body), `space-y-3` / `space-y-4` / `space-y-6` in body as needed.
+- Between label and description: `mt-0.5`.
+- Between inline label and helper: `-mt-1` or `-mt-2` on helper when tight to a control.
+
+## Icons
+- Source: `lucide-vue-next` only. No inline SVG except brand logos (e.g. YouTube) when no Lucide equivalent.
+- When to use: (1) next to section/block titles (folder, output path, account cards); (2) inside buttons to clarify action; (3) in StatusBadge (Lock/Unlock); (4) in selectable cards (Sparkles, Maximize2, Layers, etc.). Omit when label alone is clear (e.g. “Normalize audio” checkbox).
+- Sizing: `h-5 w-5` block/section titles; `h-4 w-4` buttons, list items, inputs; `h-3.5 w-3.5` badges, tight inline. Keep same size within a single context.
+- Color: default `text-muted-foreground` next to labels; `text-primary` when the icon is the main affordance (e.g. big folder/file drop targets). Buttons inherit text color from variant.
+- Placement: icon left of label or left of button text; `flex items-center gap-2` (or `gap-3` for blocks). No icon-only controls without `aria-label`.
+- Semantic map: Folder = path, directory, output folder; Music = audio/track; Music2 = audio normalization phase; Film = video creation phase; Image = image, art; Link2 = URL, link; Library = library/presets; Sparkles = automatic/ai; Maximize2 = fit/expand; Layers = custom/layers; Loader2 = loading (animate-spin); CheckCircle2 = success; XCircle = remove/clear; X = cancel/close; Upload = upload phase, uploaded status; Clock = processing status, pending; Trash2 = deleted status; ChevronDown = collapsible/expandable; DiscAlbum = Discogs; Lock/Unlock = StatusBadge; Circle = pending/unassigned state; AlertTriangle = warning/unassigned/failed. Prefer these so patterns stay consistent.
+
+## Page structure
+- Page: `<PageContainer>` wrapping `<PageHeader>` + content.
+- PageHeader: `title`, `description` (short, one line when possible), `@back`.
+- Alerts: use `StatusAlert` for success/error messages (single line, auto-dismiss optional). Use `Callout` for inline notices (info, warning, verification notes) with optional title and body/link; place near top of relevant content.
+
+### Success page (post-upload / normalize / creation)
+- Use shared `SuccessPage` when a flow finishes (upload, normalization, video creation). Props: `title`, `summary`, `from` (`creation` | `upload` | `normalize`).
+- Three actions: **Back to home** (primary), **Back to [Video Creation | Video Upload | Audio Normalization]** (outline), **See upload history** (outline). All three are always shown so the user can go home, repeat the flow, or open history.
+- Visual: CheckCircle2 icon, green success styling (`bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400`), centered layout in `PageContainer`.
+
+## Components to use
+
+### Core UI Components
+- `SectionHeader`, `SectionCard`, `StatusBadge` — see paths and props above.
+- `Callout` — from `./components/ui/Callout.vue`. Use for inline info/warning/error/success/action blocks. Props: `variant?: "info" | "warning" | "error" | "success" | "muted" | "action"`, `title?: string`; default slot for body (text, links). **Info** (blue): API verification notice, tips, caveats. **Action** (theme yellow/primary): callouts that contain a primary action (e.g. “Apply to all”); use theme primary for the callout and for action buttons inside. Card-like layout with icon; supports dark mode. Prefer over one-off colored boxes.
+- `StatusAlert` — for success/error toasts or short messages; `type`, `message`, optional `autoDismiss`. Use Callout when you need a title + body or a persistent notice (e.g. “Unverified projects: …”).
+- `Button` — variants: default, outline, destructive, ghost, link; sizes: default, sm, lg, icon.
+- `Toggle` — from `./components/ui/Toggle.vue`. Use for boolean settings and on/off options (e.g. “Notify when uploads finish”, “Normalize audio”, “30Hz high-pass filter”). Props: `modelValue` (v-model), `disabled?`, `showLabel?` (optional), `ariaLabel?`. Pill-shaped track; knob slides left/right. The switch alone is self-explanatory; omit `showLabel` — use `aria-label` for accessibility. Use with `SettingsRow` for consistent layout.
+- `Input`, `Label` — from `./components/ui/Input.vue` and `./components/ui/Label.vue`. Standard form inputs with consistent styling.
+- `Card` — from `./components/ui/Card.vue`. Base card component with `rounded-lg border-2 border-border bg-card shadow-sm`. Use `SectionCard` for section content (adds padding variants).
+- `FolderSelectionZone` — from `./components/ui/FolderSelectionZone.vue`. Standardized folder/path selection zone. Props: `value: string | null`, `label?`, `description?`, `isLoading?`, `disabled?`, `showSuccess?` (shows CheckCircle2 when value is set), `emptyMessage?` (default "No default path set"), `class?`. Clickable zone (dashed when empty, solid when filled) with Folder icon in rounded container, folder name display (truncated), clear button (XCircle), optional success checkmark, and loading spinner. Keyboard-accessible (`role="button"`, `tabindex="0"`, Enter/Space). Emits `select` and `clear`. See "Path / folder selection zone" pattern above.
+- `SelectableRadioCard` — from `./components/ui/SelectableRadioCard.vue`. Standardized radio-style selectable card. Props: `value: string | number`, `modelValue: string | number | null`, `icon?: Component`, `title: string`, `description?`, `disabled?`, `class?`. Selected: `border-primary bg-primary/5 shadow-sm`; unselected: `border-border hover:border-muted-foreground/40 hover:bg-muted/30`. Icon shown in rounded container (`bg-muted`). Supports custom content slot. Emits `update:modelValue`. See "Selectable cards (radio-like)" pattern above.
+- `SettingsRow` — from `./components/ui/SettingsRow.vue`. Standardized settings row layout. Props: `icon?: Component`, `title: string`, `description?`, `disabled?`, `iconInContainer?` (rounded container like Settings.vue), `class?`. Layout: icon (left) + title + description (middle) + control slot (right). Use default slot for Toggle, Button, or other controls. See "Settings rows with toggles" pattern above.
+
+### Status & Progress Components
+- `ProcessingStatusBadge` — from `./components/ui/ProcessingStatusBadge.vue`. Shows video processing status (uploaded, processing, processed, failed, deleted) with icons and relative timestamps. Props: `status?: VideoProcessingStatus`, `checkedAt?: string`, `failureReason?: string | null`. Uses semantic colors (yellow for processing, green for ready, red for failed, gray for deleted). Shows relative time ("Just now", "5m ago", "2h ago", "3d ago") when `checkedAt` is provided.
+- `ProgressCard` — from `./components/ProgressCard.vue`. Card showing multiple progress items with status icons. Props: `title: string`, `items?: ProgressItem[]`, `preparingMessage?: string`, `showOverallProgress?: boolean`. Each item has `name`, `message`, `status?: "pending" | "processing" | "completed" | "failed"`, `error?`. Status icons: ✓ (completed, green), ✗ (failed, red), ⟳ (processing, blue), ○ (pending, muted). Use for simple multi-item progress tracking.
+- `PipelineProgress` — from `./components/PipelineProgress.vue`. Complex multi-phase progress tracker with timeline visualization. Props: `title: string`, `phases: PipelinePhase[]`, `itemsByPhase?: Record<string, PipelineItem[]>`, `showItemProgress?: boolean`, `onCancelPhase?: (phaseId: string) => void`, `onCancelItem?: (phaseId: string, itemId: string | number) => void`. Each phase has `id`, `label`, `description?`, `status: StepStatus`, `message?`, `total?`, `completed?`, `icon?`. Shows vertical timeline with connecting lines, phase icons (spinning Loader2 when active), per-phase item lists with cancel buttons. Use for complex workflows (e.g. normalize → videos → upload pipeline).
+
+### Selection & List Components
+- `SelectableListItem` — from `./components/SelectableListItem.vue`. List item with selection state, status indicators, and optional remove button. Props: `isSelected: boolean`, `status?: SelectableListItemStatus`, `showRemove?: boolean`, `disabled?: boolean`, `class?`. Status values: `"success" | "warning" | "muted" | "assigned" | "previous" | "unassigned" | "pending" | "processing" | "completed" | "failed"`. Shows CheckCircle2 (green) for success/assigned/completed, AlertTriangle (amber) for warning/unassigned/failed, Circle (muted) for pending/processing. Selected state: `border-primary bg-primary/5 shadow-sm`. Emits `select` and `remove` events. Use for track lists, file lists, etc.
+- `ImageThumbnailCard` — from `./components/ui/ImageThumbnailCard.vue`. Selectable card with image thumbnail and hover preview. Props: `src: string | null`, `hoverSrc?: string | null` (higher-quality for preview), `label?: string`, `selected?: boolean`, `disabled?: boolean`, `loading?: boolean`, `aspect?: "video" | "square"` (default "video"), `containerClass?`, `hoverPlacement?`. Selected: `border-primary bg-primary/5 shadow-sm ring-2 ring-primary/20`. Integrates `ImageHoverPreview` for enlarged preview on hover. Shows Loader2 spinner when loading. Use for image selection grids (e.g. Discogs artwork, predefined backgrounds).
+- `SegmentedControl` — from `./components/ui/SegmentedControl.vue`. Radio-group style segmented control for selecting between options. Props: `modelValue: string | number | null`, `options: SegmentedOption[]`, `ariaLabel?`, `disabled?`. Each option: `value`, `label`, `icon?`, `disabled?`. Selected: `bg-background text-foreground shadow-sm`; unselected: `text-muted-foreground hover:bg-background/60`. Container: `border border-input bg-muted/30 p-0.5`. Use for style selection (automatic/fit-16x9/custom), fit mode (contain/cover), etc.
+
+### Image Components
+- `ImageHoverPreview` — from `./components/ui/ImageHoverPreview.vue`. Teleports an enlarged preview image on hover, positioned relative to viewport. Props: `src: string | null`, `alt?`, `placement?: "top-right" | "bottom-right" | "top-left" | "bottom-left"` (default "bottom-right"), `maxHeight?: number` (default 360px). Wraps trigger element (thumbnail) in slot. Preview is fixed-position, z-60, hidden on mobile (`hidden md:block`), with `border border-border bg-background/95 shadow-2xl`. Use for image thumbnails that need detail preview (Discogs artwork, predefined backgrounds).
+
+### Layout Components
+- `TwoPanelLayout` — from `./components/layout/TwoPanelLayout.vue`. Grid layout with left list panel (1/3 width) and right detail panel (2/3 width). Props: `leftTitle?`, `rightTitle?`, `leftSubtitle?`, `rightSubtitle?`, `itemsCount?`, `selectedIndex: number | null`. Slots: `left-icon`, `left-panel` (list), `right-panel` (detail), `empty-state` (when nothing selected). Responsive: single column on mobile, 3-column grid on lg+. Use for master-detail views (e.g. track list + track details, upload history + details).
+
+### File Selection Components
+- `FileSelectionCard` — from `./components/FileSelectionCard.vue`. Large card for selecting folders/files with icons, loading states, status info. Props: `folderLabel?`, `fileLabel?`, `selectedFolder: string | null`, `fileCount?: number`, `isLoadingFolder?`, `isLoadingFiles?`, `isProcessing?`, `showFolderButton?`, `showFileButton?`, `title?`, `description?`, `size?: "default" | "large"`. Large size: centered, bigger icons (`h-16 w-16 md:h-20 md:w-20`), more padding (`p-10 md:p-12`). Shows Folder icon (left) and file icon slot (right) with separator. Status section shows folder name and file count when selected. Emits `select-folder` and `select-files`. Use for source selection steps (audio files, video files).
+
+### Utility Components
+- `EmptyState` — from `./components/EmptyState.vue`. Centered empty state with icon and message. Props: `icon?: "music" | "video" | "folder" | "image" | "none"`, `message: string`, `hint?`, `class?`. Icon size `h-12 w-12`, opacity 50%, centered. Use when lists are empty or no selection made.
+- `Collapsible` — from `./components/ui/Collapsible.vue`. Expandable/collapsible section with chevron icon. Props: `label: string`, `defaultOpen?: boolean`, `bodyId?`, `class?`. Card-like container with button header (chevron rotates 180° when open), animated content area. Content area: `border-t border-border`, `bg-muted/20`, padding `px-4 py-3`. Use for technical details, advanced options, long descriptions.
+- `Modal` — from `./components/ui/Modal.vue`. Full-screen overlay modal with backdrop, escape key support, scroll lock. Props: `open: boolean`, `class?`. Teleports to body, fixed overlay (`bg-black/50`), centers content. Content: `bg-card rounded-lg border shadow-lg p-6 max-w-md w-full mx-4`. Handles backdrop click and Escape key. Integrates `useModalScrollLock` composable. Emits `close` event. Use for confirmations, forms, details dialogs.
+
+### Prefer these over inline duplication of the same class strings.
+
+## Settings rows with toggles
+- **Use `<SettingsRow>`** from `./components/ui/SettingsRow.vue` for consistent settings row layout. Props: `icon?: Component`, `title: string`, `description?`, `disabled?`, `iconInContainer?` (shows icon in rounded `bg-muted` container, like Settings.vue), `class?`. Layout: icon (left) + title + description (middle, `flex-1 min-w-0`) + **control slot at the end** (right). Use a **single row** for each setting. The control (Toggle, Button, etc.) sits in the default slot at the end of the line, aligned to the right.
+- Pattern: `<SectionCard><SettingsRow icon={Icon} title="Title" description="Description" icon-in-container><Toggle v-model="..." aria-label="..." /></SettingsRow></SectionCard>`.
+- For manual implementation: Layout: `flex items-center gap-3` on the row; icon `shrink-0`; text block `flex-1 min-w-0`; control last so it stays at the end.
+
+## Don’ts
+- No raw green/gray in status; use StatusBadge or the token strings above.
+- No long PageHeader descriptions; keep to one short sentence for LLM-generated copy.

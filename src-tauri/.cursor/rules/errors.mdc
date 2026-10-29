@@ -1,0 +1,316 @@
+---
+alwaysApply: true
+Title: "Error Handling Rules"
+---
+
+# Rust Error Handling Standards
+
+This codebase follows excellent error handling patterns. **ALWAYS** maintain these standards when writing or modifying Rust code.
+
+## 1. Error Type Architecture
+
+### Use `anyhow::Result<T>` in Backend Layers
+```rust
+// Domain, use cases, infrastructure - use anyhow::Result
+use anyhow::{Result, Context, bail, anyhow};
+
+fn process_image(...) -> Result<()> { ... }
+fn create_video(...) -> Result<String> { ... }
+```
+
+### Convert to `Result<T, String>` at Command Boundaries
+```rust
+// Commands convert to String for frontend
+#[tauri::command]
+pub async fn create_video(...) -> Result<String, String> {
+    use_case.execute(...)
+        .await
+        .map_err(|e| e.to_string()) // ALWAYS convert anyhow to String
+}
+```
+
+## 2. Error Context Patterns
+
+### Add Context with `.context()` and `.with_context()`
+```rust
+// Static context
+std::fs::create_dir_all(output_dir)
+    .with_context(|| format!("Failed to create output directory: {:?}", output_dir))?;
+
+// Dynamic context with closure
+validate_file_extension(image_path_buf)
+    .with_context(|| format!("Invalid image file: {}", image_path))?;
+
+// Simple context for external commands
+cmd.output().with_context(|| {
+    "Failed to execute ffmpeg command. Make sure ffmpeg is installed and in PATH."
+})?;
+```
+
+## 3. Error Creation Patterns
+
+### Use `anyhow::bail!()` for Early Returns
+```rust
+// Early validation failures
+if main_path.is_none() && main_url.is_none() {
+    anyhow::bail!("No image provided");
+}
+
+// Command validation failures
+if !output.status.success() {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    anyhow::bail!("FFmpeg error: {}", stderr);
+}
+```
+
+### Use `anyhow::anyhow!()` for Error Creation
+```rust
+// Creating errors with context
+Err(anyhow::anyhow!("Failed to create video for {}: {}", audio_path, e))
+
+// Timeout errors
+anyhow::anyhow!(
+    "Image processing timed out after {} seconds",
+    timeout::IMAGE_PROCESSING.as_secs()
+)
+```
+
+## 4. Timeout Error Handling
+
+### Wrap Blocking Operations with Descriptive Timeout Errors
+```rust
+tokio::time::timeout(timeout::IMAGE_PROCESSING, process_task)
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "Image processing timed out after {} seconds",
+            timeout::IMAGE_PROCESSING.as_secs()
+        )
+    })?
+    .map_err(|e| anyhow::anyhow!("Task error: {}", e))??;
+```
+
+### Handle Nested Results from Timeouts
+```rust
+let result = match tokio::time::timeout(timeout::VIDEO_CREATION, video_task).await {
+    Ok(Ok(Ok(output_file))) => Ok(output_file),
+    Ok(Ok(Err(e))) => Err(anyhow::anyhow!("Failed to create video: {}", e)),
+    Ok(Err(e)) => Err(anyhow::anyhow!("Task error: {}", e)),
+    Err(_) => Err(anyhow::anyhow!(
+        "Video creation timed out after {} minutes",
+        timeout::VIDEO_CREATION.as_secs() / 60
+    )),
+};
+```
+
+## 5. Cancellation Error Handling
+
+### Check Cancellation Tokens with Clear Messages
+```rust
+// Check before starting operation
+if let Some(ref token) = cancel_token {
+    if is_cancelled(token) {
+        anyhow::bail!("Operation cancelled");
+    }
+}
+
+// Per-item cancellation
+if let Some(ref token) = item_cancel_token {
+    if token.is_cancelled() {
+        return Err(anyhow::anyhow!("Item cancelled"));
+    }
+}
+```
+
+### Cleanup on Cancellation
+```rust
+if let Some(ref token) = cancel_token {
+    if is_cancelled(token) {
+        // ALWAYS cleanup temp files on cancellation
+        for temp_file in temp_normalized_files {
+            let _ = std::fs::remove_file(&temp_file);
+        }
+        anyhow::bail!("Operation cancelled");
+    }
+}
+```
+
+## 6. Validation Error Patterns
+
+### Use `Result<(), String>` for User-Facing Validation
+```rust
+pub fn validate_youtube_title(title: &str) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("Title cannot be empty".to_string());
+    }
+    if title.len() > 100 {
+        return Err("Title cannot exceed 100 characters".to_string());
+    }
+    Ok(())
+}
+```
+
+### Early Return Validation in Commands
+```rust
+// Validate early in commands with ?
+validate_user_path_str(&request.output_path)?;
+validate_youtube_title(&request.title)?;
+```
+
+## 7. HTTP Error Handling
+
+### Parse HTTP Error Responses Descriptively
+```rust
+if !status.is_success() {
+    let error_text = match response.text().await {
+        Ok(text) => text,
+        Err(_) => format!("HTTP {} - Could not read error response", status_code)
+    };
+    
+    let error_message = if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
+        let error_code = error_json["error"].as_str().unwrap_or("unknown_error");
+        let error_desc = error_json["error_description"]
+            .as_str()
+            .unwrap_or("No description provided");
+        format!("{}: {}", error_code, error_desc)
+    } else {
+        error_text.clone()
+    };
+    
+    anyhow::bail!("Failed to refresh token (HTTP {}): {}", status_code, error_message);
+}
+```
+
+## 8. Task/Spawning Error Handling
+
+### Convert Task Join Errors to Descriptive Messages
+```rust
+let process_result = tokio::time::timeout(timeout::IMAGE_PROCESSING, process_task)
+    .await
+    .map_err(|_| format!("Image processing timed out after {} seconds", timeout::IMAGE_PROCESSING.as_secs()))
+    .and_then(|r| r.map_err(|e| format!("Task error: {}", e)))
+    .and_then(|r| r.map_err(|e| format!("Failed to process image: {}", e)));
+```
+
+## 9. Error Logging Practices
+
+### Log Errors Before Returning
+```rust
+match handler.list_folder_contents(&folder_path) {
+    Ok(contents) => {
+        tracing::debug!("Listed folder contents: {} images, {} audios, {} videos", 
+            contents.images.len(), contents.audios.len(), contents.videos.len());
+        Ok(contents)
+    }
+    Err(e) => {
+        tracing::error!("Failed to list folder contents for '{}': {}", 
+            crate::infrastructure::logging::redact_sensitive(&folder_path), e);
+        Err(e.to_string())
+    }
+}
+```
+
+### Log Critical Failures
+```rust
+if main_path.is_none() && main_url.is_none() {
+    tracing::error!("Video creation failed: no image provided");
+    anyhow::bail!("No image provided");
+}
+```
+
+## 10. Bulk Operation Error Handling
+
+### Collect Successes and Failures Separately
+```rust
+let mut successful = Vec::new();
+let mut failed = Vec::new();
+
+for (i, handle) in handles.into_iter().enumerate() {
+    match handle.await {
+        Ok(Ok(output_file)) => {
+            successful.push(output_file);
+        }
+        Ok(Err(err)) => {
+            let audio_path = audio_paths_clone
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            failed.push((audio_path, format!("{}", err)));
+        }
+        Err(e) => {
+            let audio_path = audio_paths_clone
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            failed.push((audio_path, format!("Task error: {}", e)));
+        }
+    }
+}
+
+Ok(BulkVideoResult { successful, failed })
+```
+
+## 11. Error Message Quality
+
+### Write Descriptive, User-Friendly Messages
+```rust
+// ✅ GOOD: Specific and actionable
+anyhow::bail!("Not enough disk space. Required: {} MB, Available: {} MB", 
+    required_bytes / 1_048_576, available / 1_048_576);
+
+// ✅ GOOD: Includes the failing resource
+anyhow::bail!("FFmpeg error: {}", stderr);
+
+// ✅ GOOD: Includes operation context
+anyhow::bail!("Failed to create video for {}: {}", audio_path, e);
+```
+
+### Avoid Generic Error Messages
+```rust
+// ❌ BAD: Too generic
+anyhow::bail!("Error");
+
+// ❌ BAD: Missing context
+anyhow::bail!("Failed");
+```
+
+## 12. Error Propagation Rules
+
+### ALWAYS Propagate with Context
+```rust
+// ✅ GOOD: Propagate with context
+let result = some_operation()
+    .with_context(|| format!("Failed to process {}", resource))?;
+```
+
+### NEVER Ignore or Panic on Errors
+```rust
+// ❌ BAD: Don't ignore errors
+let _ = some_operation();
+
+// ❌ BAD: Don't use unwrap() in production code
+let result = some_operation().unwrap();
+
+// ❌ BAD: Don't use expect() unless truly impossible
+let result = some_operation().expect("This should never fail");
+```
+
+## Summary Checklist
+
+When writing error handling code, ensure:
+
+- [ ] Use `anyhow::Result<T>` in domain/use cases/infrastructure
+- [ ] Convert to `Result<T, String>` at command boundaries with `.map_err(|e| e.to_string())`
+- [ ] Add meaningful context with `.context()` or `.with_context()`
+- [ ] Use `anyhow::bail!()` for early returns and `anyhow::anyhow!()` for error creation
+- [ ] Handle timeouts with descriptive timeout duration messages
+- [ ] Check cancellation tokens and cleanup resources on cancellation
+- [ ] Use `Result<(), String>` for validation functions
+- [ ] Parse HTTP errors and provide structured error messages
+- [ ] Log errors at appropriate levels before returning
+- [ ] Collect successes/failures separately in bulk operations
+- [ ] Write specific, actionable error messages with context
+- [ ] Never ignore errors or use `unwrap()`/`expect()` in production code
+
+**These patterns ensure consistent, maintainable, and user-friendly error handling across the entire Rust backend.**
